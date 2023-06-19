@@ -49,25 +49,37 @@ def rename_gpx_files(gpx_folder):
         print("Renamed file:", gpx_file, "to", new_filepath)
 
 def merge_gpx_files(gpx_folder):
-    gpx_files = ""  
+    #This function searches for GPX files in the folder, extracts the first file's name, shortens it to a maximum length of 10 characters, and creates an output file name by combining the shortened name with "-merged.gpx". It then executes commands using the subprocess module to merge the selected GPX files into the output file and delete the merged files. The function provides feedback on the output file name and completion of the merge and delete operations.
+
+    gpx_files = ""
     for file in os.listdir(gpx_folder):
         if file.endswith(".gpx"):
             gpx_files += file + " "
-    print("GPX files:", gpx_files)
-    # Call Gpxity merge function using subprocess
 
-    output = 'merged' + '.gpx'
-    output_file = os.path.join(output)  
+    gpx_files_list = gpx_files.split()
+    if gpx_files_list:
+        first_file = gpx_files_list[0]
+        max_length = 10
+        shortened_name = first_file[:max_length]
+
+        output_file = f"{shortened_name}-merged.gpx"
+        print("Output file:", output_file)
+
+    print("GPX files:", gpx_files)
 
     command = f'gpxmerge {gpx_files} -o {output_file}'
     subprocess.run(command, shell=True, cwd=gpx_folder)
-
-
-
+    print("Merge DONE")
+    command = f'mv {output_file} ..'
+    subprocess.run(command, shell=True, cwd=gpx_folder)
+    print("Move DONE")
+    command = f'rm {gpx_files}'
+    subprocess.run(command, shell=True, cwd=gpx_folder)
+    print("Delete DONE")
 
 conv = Converter()
 fit_folder = "./input/"
-gpx_folder = "./output/"
+gpx_folder = "./tmp/"
 
 gpx = conv.fit_to_gpx_bulk(dir_in=fit_folder, dir_out=gpx_folder)
 print(".fit to .gpx DONE")
