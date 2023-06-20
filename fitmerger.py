@@ -2,6 +2,7 @@ from fit2gpx import Converter
 import os
 import glob
 from datetime import datetime
+import shutil
 import subprocess
 
 def rename_gpx_files(gpx_folder):
@@ -24,41 +25,53 @@ def rename_gpx_files(gpx_folder):
                 new_filename = timestamp.strftime('%Y-%m-%d') + '-' + str(suffix) + '.gpx'
                 new_filepath = os.path.join(gpx_folder, new_filename)
                 suffix += 1
-            os.rename(gpx_file, new_filepath)
-            print("Renamed file:", gpx_file, "to", new_filepath)
+
+            # Move the file to a folder with the first 10 characters of the filename
+            folder_name = new_filename[:10]
+            folder_path = os.path.join(gpx_folder, folder_name)
+            os.makedirs(folder_path, exist_ok=True)
+            destination_path = os.path.join(folder_path, new_filename)
+            shutil.move(gpx_file, destination_path)
+            print("Moved file:", gpx_file, "to", destination_path)
         else:
             print("No timestamp found in file:", gpx_file)
 
-def merge_gpx_files(gpx_folder):
-    gpx_files = [file for file in os.listdir(gpx_folder) if file.endswith(".gpx")]
-    if gpx_files:
-        first_file = gpx_files[0]
-        max_length = 10
-        shortened_name = first_file[:max_length]
-        output_file = f"{shortened_name}-merged.gpx"
-        print("Output file:", output_file)
-    else:
-        print("No GPX files found.")
+def merge_gpx_files(gpx_folder, merged_folder):
+    while True:
+        subfolders = [f for f in os.listdir(gpx_folder) if os.path.isdir(os.path.join(gpx_folder, f))]
+        if not subfolders:
+            break
+
+        for subfolder in subfolders:
+            subfolder_path = os.path.join(gpx_folder, subfolder)
+            merge_files_in_folder(subfolder_path, merged_folder)
+            shutil.rmtree(subfolder_path)  # Löschen des ursprünglichen Ordners nach dem Zusammenführen und Verschieben
+
+def merge_files_in_folder(folder_path, merged_folder):
+    gpx_files = glob.glob(os.path.join(folder_path, '*.gpx'))
+    if len(gpx_files) < 2:
         return
 
-    print("GPX files:", " ".join(gpx_files))
-    command = f'gpxmerge {" ".join(gpx_files)} -o {output_file}'
-    subprocess.run(command, shell=True, cwd=gpx_folder)
-    print("Merge DONE")
-    command = f'mv {output_file} ..'
-    subprocess.run(command, shell=True, cwd=gpx_folder)
-    print("Move DONE")
-    command = f'rm {" ".join(gpx_files)}'
-    subprocess.run(command, shell=True, cwd=gpx_folder)
-    print("Delete DONE")
+    output_file = os.path.join(folder_path, f"{os.path.basename(folder_path)}-complete.gpx")
+    gpxmerge_command = f'gpxmerge {" ".join(gpx_files)} -o {output_file}'
+    subprocess.run(gpxmerge_command, shell=True, cwd="./")
+    print("Merged files in folder:", folder_path)
+
+    # Verschieben der zusammengeführten Datei in den merged_folder
+    merged_filepath = os.path.join(merged_folder, os.path.basename(output_file))
+    shutil.move(output_file, merged_filepath)
+    print("Moved merged file to:", merged_filepath)
 
 conv = Converter()
 fit_folder = "./input/"
 gpx_folder = "./tmp/"
+merged_folder = "./output/"
 
 gpx = conv.fit_to_gpx_bulk(dir_in=fit_folder, dir_out=gpx_folder)
 print(".fit to .gpx DONE")
+
 rename_gpx_files(gpx_folder)
 print("Naming DONE")
-merge_gpx_files(gpx_folder)
+
+merge_gpx_files(gpx_folder, merged_folder)
 print("Combining DONE")
