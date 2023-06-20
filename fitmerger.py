@@ -5,6 +5,26 @@ from datetime import datetime
 import shutil
 import subprocess
 
+
+def create_folders(fit_folder, gpx_folder, merged_folder):
+    # Überprüfen und Erstellen des fit_folder
+    if not os.path.exists(fit_folder):
+        os.makedirs(fit_folder)
+        print("Created input_folder:", fit_folder)
+        print("Please place .fit files in the input folder")
+        exit()
+
+    # Überprüfen und Erstellen des gpx_folder
+    if not os.path.exists(gpx_folder):
+        os.makedirs(gpx_folder)
+        print("Created gpx_folder:", gpx_folder)
+
+    # Überprüfen und Erstellen des merged_folder
+    if not os.path.exists(merged_folder):
+        os.makedirs(merged_folder)
+        print("Created merged_folder:", merged_folder)
+
+
 def rename_gpx_files(gpx_folder):
     gpx_files = glob.glob(os.path.join(gpx_folder, '*.gpx'))
     suffix = 1
@@ -66,6 +86,8 @@ conv = Converter()
 fit_folder = "./input/"
 gpx_folder = "./tmp/"
 merged_folder = "./output/"
+
+create_folders(fit_folder, gpx_folder, merged_folder)
 
 gpx = conv.fit_to_gpx_bulk(dir_in=fit_folder, dir_out=gpx_folder)
 print(".fit to .gpx DONE")
