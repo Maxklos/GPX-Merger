@@ -28,10 +28,9 @@ def create_folders(fit_folder, gpx_folder, merged_folder):
 def rename_gpx_files(gpx_folder):
     gpx_files = glob.glob(os.path.join(gpx_folder, '*.gpx'))
     suffix = 1
-    for gpx_file in gpx_files:
-        with open(gpx_file, 'r') as f:
-            lines = f.readlines()
-            timestamp_str = next((line.strip().replace('<time>', '').replace('</time>', '') for line in lines if '<time>' in line), None)
+    sorted_files = sorted(gpx_files, key=lambda x: get_earliest_timestamp(x))  # Sort files by earliest timestamp
+    for gpx_file in sorted_files:
+        timestamp_str = get_earliest_timestamp(gpx_file)
         if timestamp_str:
             try:
                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%dT%H:%M:%SZ')
@@ -56,6 +55,12 @@ def rename_gpx_files(gpx_folder):
         else:
             print("No timestamp found in file:", gpx_file)
 
+def get_earliest_timestamp(gpx_file):
+    with open(gpx_file, 'r') as f:
+        lines = f.readlines()
+        timestamp_str = next((line.strip().replace('<time>', '').replace('</time>', '') for line in lines if '<time>' in line), None)
+    return timestamp_str
+
 def merge_gpx_files(gpx_folder, merged_folder):
     while True:
         subfolders = [f for f in os.listdir(gpx_folder) if os.path.isdir(os.path.join(gpx_folder, f))]
@@ -68,7 +73,7 @@ def merge_gpx_files(gpx_folder, merged_folder):
             shutil.rmtree(subfolder_path)  # Löschen des ursprünglichen Ordners nach dem Zusammenführen und Verschieben
 
 def merge_files_in_folder(folder_path, merged_folder):
-    gpx_files = glob.glob(os.path.join(folder_path, '*.gpx'))
+    gpx_files = sorted(glob.glob(os.path.join(folder_path, '*.gpx')))  # Sort GPX files in alphabetical order
     if len(gpx_files) < 2:
         return
 
