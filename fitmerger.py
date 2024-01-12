@@ -24,8 +24,7 @@ def create_folders(fit_folder, gpx_folder, merged_folder):
         os.makedirs(merged_folder)
         print("Created merged_folder:", merged_folder)
 
-
-def rename_gpx_files(gpx_folder):
+def rename_gpx_files(gpx_folder, merged_folder):
     gpx_files = glob.glob(os.path.join(gpx_folder, '*.gpx'))
     suffix = 1
     sorted_files = sorted(gpx_files, key=lambda x: get_earliest_timestamp(x))  # Sort files by earliest timestamp
@@ -39,7 +38,17 @@ def rename_gpx_files(gpx_folder):
                 continue
             new_filename = timestamp.strftime('%Y-%m-%d') + '-' + str(suffix) + '.gpx'
             suffix += 1
+
+            if len(glob.glob(os.path.join(gpx_folder, f"{timestamp.strftime('%Y-%m-%d')}*.gpx"))) == 1:
+                # Only one file for this day, rename and move directly to the output folder
+                new_filename = timestamp.strftime('%Y-%m-%d') + '-single.gpx'
+                new_filepath = os.path.join(merged_folder, new_filename)
+                shutil.move(gpx_file, new_filepath)
+                print("Moved single file:", gpx_file, "to", new_filepath)
+                continue
+
             new_filepath = os.path.join(gpx_folder, new_filename)
+
             while os.path.exists(new_filepath):
                 new_filename = timestamp.strftime('%Y-%m-%d') + '-' + str(suffix) + '.gpx'
                 new_filepath = os.path.join(gpx_folder, new_filename)
@@ -54,6 +63,7 @@ def rename_gpx_files(gpx_folder):
             print("Moved file:", gpx_file, "to", destination_path)
         else:
             print("No timestamp found in file:", gpx_file)
+
 
 def get_earliest_timestamp(gpx_file):
     with open(gpx_file, 'r') as f:
@@ -93,11 +103,10 @@ gpx_folder = "./tmp/"
 merged_folder = "./output/"
 
 create_folders(fit_folder, gpx_folder, merged_folder)
-
 gpx = conv.fit_to_gpx_bulk(dir_in=fit_folder, dir_out=gpx_folder)
 print(".fit to .gpx DONE")
 
-rename_gpx_files(gpx_folder)
+rename_gpx_files(gpx_folder, merged_folder)
 print("Naming DONE")
 
 merge_gpx_files(gpx_folder, merged_folder)
