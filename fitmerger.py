@@ -432,10 +432,13 @@ print(f"Converting {len(fit_files)} FIT files to GPX...")
 
 for fit_file in tqdm(fit_files, desc="Converting", unit="file"):
     try:
-        conv.fit_to_gpx(f_in=fit_file, f_out=gpx_folder)
+        # Erstelle korrekten Output-Dateinamen
+        base_name = os.path.splitext(os.path.basename(fit_file))[0]
+        output_file = os.path.join(gpx_folder, f"{base_name}.gpx")
+        conv.fit_to_gpx(f_in=fit_file, f_out=output_file)
     except Exception as e:
         if DEBUG:
-            print(f"\n[ERROR] Failed to convert {os.path.basename(fit_file)}: {e}")
+            tqdm.write(f"\n[ERROR] Failed to convert {os.path.basename(fit_file)}: {e}")
 
 print("✓ FIT to GPX conversion DONE\n")
 
