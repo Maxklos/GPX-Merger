@@ -237,9 +237,9 @@ def find_newest_file(output_folder):
     newest_date = None
     
     for gpx_file in gpx_files:
-        # Aktiviere verbose debugging nur für die erste Datei
+        # Aktiviere verbose debugging nur für die erste Datei im DEBUG-Modus
         is_first = (newest_file is None)
-        latest_date = get_latest_date_from_file(gpx_file, debug_verbose=is_first)
+        latest_date = get_latest_date_from_file(gpx_file, debug_verbose=(DEBUG and is_first))
         if latest_date and (newest_date is None or latest_date > newest_date):
             newest_date = latest_date
             newest_file = gpx_file
@@ -258,9 +258,6 @@ def find_newest_file(output_folder):
 
 def fix_timestamps_in_file(input_file, output_file, date_offset_days):
     """Korrigiert alle Timestamps in einer Datei"""
-    if DEBUG:
-        print(f"[DEBUG] Processing file: {os.path.basename(input_file)}")
-    
     with open(input_file, 'r', encoding='utf-8') as f:
         content = f.read()
     
@@ -277,20 +274,15 @@ def fix_timestamps_in_file(input_file, output_file, date_offset_days):
             
             content = content.replace(f'<time>{old_time_str}</time>', f'<time>{new_time_str}</time>', 1)
             timestamps_fixed += 1
-            
-            if DEBUG and timestamps_fixed == 1:  # Nur den ersten Timestamp loggen
-                print(f"[DEBUG]   First timestamp: {old_timestamp.strftime('%d/%m/%Y %H:%M:%S')} -> {new_timestamp.strftime('%d/%m/%Y %H:%M:%S')}")
         
         except ValueError:
             if DEBUG:
-                print(f"[WARNING] Could not parse timestamp: {old_time_str}")
+                tqdm.write(f"[WARNING] Could not parse timestamp: {old_time_str}")
     
     # Schreibe die korrigierte Datei
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(content)
     
-    if DEBUG:
-        print(f"[DEBUG]   Fixed {timestamps_fixed} timestamps")
     return timestamps_fixed
 
 
@@ -301,7 +293,7 @@ def rename_fixed_file(fixed_file, fixed_folder):
     
     if not earliest_date:
         if DEBUG:
-            print(f"[WARNING] Could not extract date from {os.path.basename(fixed_file)}, keeping original name")
+            tqdm.write(f"[WARNING] Could not extract date from {os.path.basename(fixed_file)}, keeping original name")
         return fixed_file
     
     # Extrahiere das Suffix (-complete oder -single)
@@ -320,8 +312,6 @@ def rename_fixed_file(fixed_file, fixed_folder):
     # Benenne um, falls der Name anders ist
     if fixed_file != new_filepath:
         os.rename(fixed_file, new_filepath)
-        if DEBUG:
-            print(f"[DEBUG] Renamed: {old_filename} -> {new_filename}")
         return new_filepath
     
     return fixed_file
@@ -374,12 +364,12 @@ def apply_2006_fix(output_folder):
     # Verarbeite alle GPX-Dateien
     gpx_files = glob.glob(os.path.join(output_folder, '*.gpx'))
     
-    print(f"\nProcessing {len(gpx_files)} files...")
+    print(f"\nProcessing {len(gpx_files)} files...\n")
     
     total_timestamps = 0
     
     # Progress bar für Dateiverarbeitung
-    for gpx_file in tqdm(gpx_files, desc="Fixing timestamps", unit="file"):
+    for gpx_file in tqdm(gpx_files, desc="Fixing timestamps", unit="file", ncols=80):
         filename = os.path.basename(gpx_file)
         temp_output_file = os.path.join(fixed_folder, filename)
         
@@ -395,15 +385,13 @@ def apply_2006_fix(output_folder):
         
         if old_date:
             new_date = old_date + timedelta(days=date_offset)
-            tqdm.write(f"✓ {filename}: {old_date.strftime('%d/%m/%Y')} -> {new_date.strftime('%d/%m/%Y')}")
-        else:
-            tqdm.write(f"✓ {filename}: processed")
+            tqdm.write(f"  ✓ {filename}: {old_date.strftime('%d/%m/%Y')} -> {new_date.strftime('%d/%m/%Y')}")
     
     print("\n" + "="*60)
-    print(f"[SUCCESS] 2006-Fix complete!")
-    print(f"[SUCCESS] Processed {len(gpx_files)} files")
-    print(f"[SUCCESS] Fixed {total_timestamps} total timestamps")
-    print(f"[SUCCESS] Fixed files saved to: {fixed_folder}")
+    print(f"✓ 2006-Fix complete!")
+    print(f"✓ Processed {len(gpx_files)} files")
+    print(f"✓ Fixed {total_timestamps} total timestamps")
+    print(f"✓ Fixed files saved to: {fixed_folder}")
     print("="*60 + "\n")
 
 
@@ -430,7 +418,7 @@ create_folders(fit_folder, gpx_folder, merged_folder)
 fit_files = glob.glob(os.path.join(fit_folder, '*.fit'))
 print(f"Converting {len(fit_files)} FIT files to GPX...")
 
-for fit_file in tqdm(fit_files, desc="Converting", unit="file"):
+for fit_file in tqdm(fit_files, desc="Converting", unit="file", ncols=80):
     try:
         # Erstelle korrekten Output-Dateinamen
         base_name = os.path.splitext(os.path.basename(fit_file))[0]
@@ -438,7 +426,7 @@ for fit_file in tqdm(fit_files, desc="Converting", unit="file"):
         conv.fit_to_gpx(f_in=fit_file, f_out=output_file)
     except Exception as e:
         if DEBUG:
-            tqdm.write(f"\n[ERROR] Failed to convert {os.path.basename(fit_file)}: {e}")
+            tqdm.write(f"[ERROR] Failed to convert {os.path.basename(fit_file)}: {e}")
 
 print("✓ FIT to GPX conversion DONE\n")
 
