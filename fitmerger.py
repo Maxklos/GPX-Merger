@@ -32,15 +32,20 @@ def create_folders(fit_folder, gpx_folder, merged_folder):
 
 def rename_gpx_files(gpx_folder, merged_folder):
     gpx_files = glob.glob(os.path.join(gpx_folder, '*.gpx'))
+    
+    if not gpx_files:
+        return
+    
     suffix = 1
-    sorted_files = sorted(gpx_files, key=lambda x: get_earliest_timestamp(x))  # Sort files by earliest timestamp
-    for gpx_file in sorted_files:
+    sorted_files = sorted(gpx_files, key=lambda x: get_earliest_timestamp(x))
+    
+    for gpx_file in tqdm(sorted_files, desc="Renaming files", unit="file", ncols=80):
         timestamp_str = get_earliest_timestamp(gpx_file)
         if timestamp_str:
             try:
                 timestamp = datetime.strptime(timestamp_str, '%Y-%m-%dT%H:%M:%SZ')
             except ValueError:
-                print("Incorrect timestamp format for file:", gpx_file)
+                tqdm.write(f"Incorrect timestamp format for file: {gpx_file}")
                 continue
             new_filename = timestamp.strftime('%Y-%m-%d') + '-' + str(suffix) + '.gpx'
             suffix += 1
@@ -51,7 +56,7 @@ def rename_gpx_files(gpx_folder, merged_folder):
                 new_filepath = os.path.join(merged_folder, new_filename)
                 shutil.move(gpx_file, new_filepath)
                 if DEBUG:
-                    print("Moved single file:", gpx_file, "to", new_filepath)
+                    tqdm.write(f"Moved single file: {gpx_file} to {new_filepath}")
                 continue
 
             new_filepath = os.path.join(gpx_folder, new_filename)
@@ -68,9 +73,9 @@ def rename_gpx_files(gpx_folder, merged_folder):
             destination_path = os.path.join(folder_path, new_filename)
             shutil.move(gpx_file, destination_path)
             if DEBUG:
-                print("Moved file:", gpx_file, "to", destination_path)
+                tqdm.write(f"Moved file: {gpx_file} to {destination_path}")
         else:
-            print("No timestamp found in file:", gpx_file)
+            tqdm.write(f"No timestamp found in file: {gpx_file}")
 
 
 def get_earliest_timestamp(gpx_file):
@@ -80,18 +85,21 @@ def get_earliest_timestamp(gpx_file):
     return timestamp_str
 
 def merge_gpx_files(gpx_folder, merged_folder):
+    # Sammle alle Subfolders zuerst
+    all_subfolders = []
     while True:
         subfolders = [f for f in os.listdir(gpx_folder) if os.path.isdir(os.path.join(gpx_folder, f))]
         if not subfolders:
             break
-
-        for subfolder in subfolders:
+        all_subfolders.extend(subfolders)
+        
+        for subfolder in tqdm(subfolders, desc="Merging files", unit="merge", ncols=80):
             subfolder_path = os.path.join(gpx_folder, subfolder)
             merge_files_in_folder(subfolder_path, merged_folder)
-            shutil.rmtree(subfolder_path)  # Löschen des ursprünglichen Ordners nach dem Zusammenführen und Verschieben
+            shutil.rmtree(subfolder_path)
 
 def merge_files_in_folder(folder_path, merged_folder):
-    gpx_files = sorted(glob.glob(os.path.join(folder_path, '*.gpx')))  # Sort GPX files in alphabetical order
+    gpx_files = sorted(glob.glob(os.path.join(folder_path, '*.gpx')))
     if len(gpx_files) < 2:
         return
 
@@ -99,13 +107,13 @@ def merge_files_in_folder(folder_path, merged_folder):
     gpxmerge_command = f'gpxmerge {" ".join(gpx_files)} -o {output_file}'
     subprocess.run(gpxmerge_command, shell=True, cwd="./", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if DEBUG:
-        print("Merged files in folder:", folder_path)
+        tqdm.write(f"Merged files in folder: {folder_path}")
 
     # Verschieben der zusammengeführten Datei in den merged_folder
     merged_filepath = os.path.join(merged_folder, os.path.basename(output_file))
     shutil.move(output_file, merged_filepath)
     if DEBUG:
-        print("Moved merged file to:", merged_filepath)
+        tqdm.write(f"Moved merged file to: {merged_filepath}")
 
 
 # ==================== 2006-FIX FUNCTIONS ====================
