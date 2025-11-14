@@ -78,13 +78,13 @@ Some GPS devices (like Lezyne Y10, Super GPS, Micro C GPS, and Micro C Watch GPS
 
 ```
 ⚠️  Old timestamps detected (older than 1 year)
-Möchtest du den 2006-Fix anwenden? (j/n): j
+Do you want to apply the 2006-Fix? (y/n): y
 
-Neuste Datei: 2006-03-30-complete.gpx
-Datum in Datei: 30/03/2006
-Uhrzeit in Datei: 15:17:56
+Newest file: 2006-03-30-complete.gpx
+Date in file: 30/03/2006
+Time in file: 15:17:56
 
-An welchem Tag wurde diese Datei aufgezeichnet? (Format: DD/MM/YYYY): 13/11/2025
+On which date was this file recorded? (Format: DD/MM/YYYY): 13/11/2025
 
 Processing 31 files...
 Fixing timestamps: [████████████████] 100% 31/31
