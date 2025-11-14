@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import shutil
 import subprocess
 import re
+from collections import Counter
 
 
 def create_folders(fit_folder, gpx_folder, merged_folder):
@@ -102,9 +103,8 @@ def merge_files_in_folder(folder_path, merged_folder):
 # ==================== 2006-FIX FUNCTIONS ====================
 
 def get_latest_date_from_file(gpx_file, debug_verbose=False):
-    """Findet das späteste Datum in einer GPX-Datei"""
+    """Findet das späteste Datum in einer GPX-Datei (ignoriert Outlier-Jahre)"""
     print(f"[DEBUG] Scanning file: {gpx_file}")
-    latest_date = None
     all_dates = []
     
     with open(gpx_file, 'r', encoding='utf-8') as f:
@@ -114,30 +114,45 @@ def get_latest_date_from_file(gpx_file, debug_verbose=False):
         
         print(f"[DEBUG] Found {len(time_tags)} timestamps in {os.path.basename(gpx_file)}")
         
-        # EXTENDED DEBUG: Zeige die ersten 10 Timestamps
-        if debug_verbose and len(time_tags) > 0:
-            print(f"[DEBUG] === First 10 raw timestamps found in file ===")
-            for i, time_str in enumerate(time_tags[:10]):
-                print(f"[DEBUG]   [{i+1}] RAW: {time_str}")
-        
+        # Parse alle Timestamps
         for time_str in time_tags:
             try:
                 timestamp = datetime.strptime(time_str, '%Y-%m-%dT%H:%M:%SZ')
                 all_dates.append(timestamp)
-                if latest_date is None or timestamp > latest_date:
-                    latest_date = timestamp
             except ValueError:
                 print(f"[WARNING] Could not parse timestamp: {time_str}")
         
-        # EXTENDED DEBUG: Zeige alle gefundenen Jahre
-        if debug_verbose and all_dates:
-            years = set(d.year for d in all_dates)
-            print(f"[DEBUG] === Years found in file: {sorted(years)} ===")
-            print(f"[DEBUG] === Earliest timestamp: {min(all_dates).strftime('%d/%m/%Y %H:%M:%S')} ===")
-            print(f"[DEBUG] === Latest timestamp: {max(all_dates).strftime('%d/%m/%Y %H:%M:%S')} ===")
+        if not all_dates:
+            return None
+        
+        # Analysiere Jahre und finde Outliers
+        year_counts = Counter(d.year for d in all_dates)
+        most_common_year = year_counts.most_common(1)[0][0]
+        
+        # DEBUG: Zeige Jahr-Statistiken
+        if debug_verbose or len(year_counts) > 1:
+            print(f"[DEBUG] === Year analysis ===")
+            for year, count in sorted(year_counts.items()):
+                percentage = (count / len(all_dates)) * 100
+                marker = " (DOMINANT)" if year == most_common_year else " (OUTLIER - IGNORED)"
+                print(f"[DEBUG]   Year {year}: {count} timestamps ({percentage:.1f}%){marker}")
+        
+        # Filtere nur Timestamps aus dem häufigsten Jahr
+        filtered_dates = [d for d in all_dates if d.year == most_common_year]
+        latest_date = max(filtered_dates)
+        
+        # EXTENDED DEBUG
+        if debug_verbose:
+            print(f"[DEBUG] === First 10 raw timestamps (all years) ===")
+            for i, time_str in enumerate(time_tags[:10]):
+                print(f"[DEBUG]   [{i+1}] RAW: {time_str}")
+            
+            print(f"[DEBUG] === Filtered results (year {most_common_year} only) ===")
+            print(f"[DEBUG]   Earliest: {min(filtered_dates).strftime('%d/%m/%Y %H:%M:%S')}")
+            print(f"[DEBUG]   Latest: {max(filtered_dates).strftime('%d/%m/%Y %H:%M:%S')}")
     
     if latest_date:
-        print(f"[DEBUG] Latest date in {os.path.basename(gpx_file)}: {latest_date.strftime('%d/%m/%Y %H:%M:%S')}")
+        print(f"[DEBUG] Latest date in {os.path.basename(gpx_file)}: {latest_date.strftime('%d/%m/%Y %H:%M:%S')} (from {len(filtered_dates)} valid timestamps)")
     
     return latest_date
 
@@ -262,8 +277,8 @@ def apply_2006_fix(output_folder):
         filename = os.path.basename(gpx_file)
         output_file = os.path.join(fixed_folder, filename)
         
-        # Hole das alte Datum für den Log
-        old_date = get_latest_date_from_file(gpx_file)
+        # Hole das alte Datum für den Log (ohne verbose debug)
+        old_date = get_latest_date_from_file(gpx_file, debug_verbose=False)
         
         # Fixe die Timestamps
         fixed_count = fix_timestamps_in_file(gpx_file, output_file, date_offset)
