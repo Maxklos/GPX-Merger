@@ -157,6 +157,35 @@ def get_latest_date_from_file(gpx_file, debug_verbose=False):
     return latest_date
 
 
+def get_earliest_date_from_file(gpx_file):
+    """Findet das früheste Datum in einer GPX-Datei (ignoriert Outlier-Jahre) - für Dateinamen"""
+    all_dates = []
+    
+    with open(gpx_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+        time_tags = re.findall(r'<time>(.*?)</time>', content)
+        
+        for time_str in time_tags:
+            try:
+                timestamp = datetime.strptime(time_str, '%Y-%m-%dT%H:%M:%SZ')
+                all_dates.append(timestamp)
+            except ValueError:
+                pass
+        
+        if not all_dates:
+            return None
+        
+        # Analysiere Jahre und finde dominantes Jahr
+        year_counts = Counter(d.year for d in all_dates)
+        most_common_year = year_counts.most_common(1)[0][0]
+        
+        # Filtere nur Timestamps aus dem häufigsten Jahr
+        filtered_dates = [d for d in all_dates if d.year == most_common_year]
+        earliest_date = min(filtered_dates)
+    
+    return earliest_date
+
+
 def find_newest_file(output_folder):
     """Findet die Datei mit dem spätesten Datum"""
     print("\n[DEBUG] === Starting search for newest file ===")
@@ -226,6 +255,37 @@ def fix_timestamps_in_file(input_file, output_file, date_offset_days):
     return timestamps_fixed
 
 
+def rename_fixed_file(fixed_file, fixed_folder):
+    """Benennt eine korrigierte Datei nach ihrem neuen Datum um"""
+    # Hole das früheste Datum aus der korrigierten Datei
+    earliest_date = get_earliest_date_from_file(fixed_file)
+    
+    if not earliest_date:
+        print(f"[WARNING] Could not extract date from {os.path.basename(fixed_file)}, keeping original name")
+        return fixed_file
+    
+    # Extrahiere das Suffix (-complete oder -single)
+    old_filename = os.path.basename(fixed_file)
+    if '-complete.gpx' in old_filename:
+        suffix = '-complete.gpx'
+    elif '-single.gpx' in old_filename:
+        suffix = '-single.gpx'
+    else:
+        suffix = '.gpx'
+    
+    # Erstelle neuen Dateinamen
+    new_filename = earliest_date.strftime('%Y-%m-%d') + suffix
+    new_filepath = os.path.join(fixed_folder, new_filename)
+    
+    # Benenne um, falls der Name anders ist
+    if fixed_file != new_filepath:
+        os.rename(fixed_file, new_filepath)
+        print(f"[DEBUG] Renamed: {old_filename} -> {new_filename}")
+        return new_filepath
+    
+    return fixed_file
+
+
 def apply_2006_fix(output_folder):
     """Hauptfunktion für den 2006-Fix"""
     print("\n" + "="*60)
@@ -275,14 +335,17 @@ def apply_2006_fix(output_folder):
     total_timestamps = 0
     for gpx_file in gpx_files:
         filename = os.path.basename(gpx_file)
-        output_file = os.path.join(fixed_folder, filename)
+        temp_output_file = os.path.join(fixed_folder, filename)
         
         # Hole das alte Datum für den Log (ohne verbose debug)
         old_date = get_latest_date_from_file(gpx_file, debug_verbose=False)
         
         # Fixe die Timestamps
-        fixed_count = fix_timestamps_in_file(gpx_file, output_file, date_offset)
+        fixed_count = fix_timestamps_in_file(gpx_file, temp_output_file, date_offset)
         total_timestamps += fixed_count
+        
+        # Benenne die Datei nach dem neuen Datum um
+        final_file = rename_fixed_file(temp_output_file, fixed_folder)
         
         if old_date:
             new_date = old_date + timedelta(days=date_offset)
