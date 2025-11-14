@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import re
 from collections import Counter
+import argparse
+from tqdm import tqdm
 
 
 def create_folders(fit_folder, gpx_folder, merged_folder):
@@ -19,12 +21,14 @@ def create_folders(fit_folder, gpx_folder, merged_folder):
     # Überprüfen und Erstellen des gpx_folder
     if not os.path.exists(gpx_folder):
         os.makedirs(gpx_folder)
-        print("Created gpx_folder:", gpx_folder)
+        if DEBUG:
+            print("Created gpx_folder:", gpx_folder)
 
     # Überprüfen und Erstellen des merged_folder
     if not os.path.exists(merged_folder):
         os.makedirs(merged_folder)
-        print("Created merged_folder:", merged_folder)
+        if DEBUG:
+            print("Created merged_folder:", merged_folder)
 
 def rename_gpx_files(gpx_folder, merged_folder):
     gpx_files = glob.glob(os.path.join(gpx_folder, '*.gpx'))
@@ -46,7 +50,8 @@ def rename_gpx_files(gpx_folder, merged_folder):
                 new_filename = timestamp.strftime('%Y-%m-%d') + '-single.gpx'
                 new_filepath = os.path.join(merged_folder, new_filename)
                 shutil.move(gpx_file, new_filepath)
-                print("Moved single file:", gpx_file, "to", new_filepath)
+                if DEBUG:
+                    print("Moved single file:", gpx_file, "to", new_filepath)
                 continue
 
             new_filepath = os.path.join(gpx_folder, new_filename)
@@ -62,7 +67,8 @@ def rename_gpx_files(gpx_folder, merged_folder):
             os.makedirs(folder_path, exist_ok=True)
             destination_path = os.path.join(folder_path, new_filename)
             shutil.move(gpx_file, destination_path)
-            print("Moved file:", gpx_file, "to", destination_path)
+            if DEBUG:
+                print("Moved file:", gpx_file, "to", destination_path)
         else:
             print("No timestamp found in file:", gpx_file)
 
@@ -91,20 +97,24 @@ def merge_files_in_folder(folder_path, merged_folder):
 
     output_file = os.path.join(folder_path, f"{os.path.basename(folder_path)}-complete.gpx")
     gpxmerge_command = f'gpxmerge {" ".join(gpx_files)} -o {output_file}'
-    subprocess.run(gpxmerge_command, shell=True, cwd="./")
-    print("Merged files in folder:", folder_path)
+    subprocess.run(gpxmerge_command, shell=True, cwd="./", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if DEBUG:
+        print("Merged files in folder:", folder_path)
 
     # Verschieben der zusammengeführten Datei in den merged_folder
     merged_filepath = os.path.join(merged_folder, os.path.basename(output_file))
     shutil.move(output_file, merged_filepath)
-    print("Moved merged file to:", merged_filepath)
+    if DEBUG:
+        print("Moved merged file to:", merged_filepath)
 
 
 # ==================== 2006-FIX FUNCTIONS ====================
 
 def get_latest_date_from_file(gpx_file, debug_verbose=False):
     """Findet das späteste Datum in einer GPX-Datei (ignoriert Outlier-Jahre)"""
-    print(f"[DEBUG] Scanning file: {gpx_file}")
+    if DEBUG and debug_verbose:
+        print(f"[DEBUG] Scanning file: {gpx_file}")
+    
     all_dates = []
     
     with open(gpx_file, 'r', encoding='utf-8') as f:
@@ -112,7 +122,8 @@ def get_latest_date_from_file(gpx_file, debug_verbose=False):
         # Finde alle <time> Tags
         time_tags = re.findall(r'<time>(.*?)</time>', content)
         
-        print(f"[DEBUG] Found {len(time_tags)} timestamps in {os.path.basename(gpx_file)}")
+        if DEBUG and debug_verbose:
+            print(f"[DEBUG] Found {len(time_tags)} timestamps in {os.path.basename(gpx_file)}")
         
         # Parse alle Timestamps
         for time_str in time_tags:
@@ -120,7 +131,8 @@ def get_latest_date_from_file(gpx_file, debug_verbose=False):
                 timestamp = datetime.strptime(time_str, '%Y-%m-%dT%H:%M:%SZ')
                 all_dates.append(timestamp)
             except ValueError:
-                print(f"[WARNING] Could not parse timestamp: {time_str}")
+                if DEBUG:
+                    print(f"[WARNING] Could not parse timestamp: {time_str}")
         
         if not all_dates:
             return None
@@ -130,7 +142,7 @@ def get_latest_date_from_file(gpx_file, debug_verbose=False):
         most_common_year = year_counts.most_common(1)[0][0]
         
         # DEBUG: Zeige Jahr-Statistiken
-        if debug_verbose or len(year_counts) > 1:
+        if DEBUG and (debug_verbose or len(year_counts) > 1):
             print(f"[DEBUG] === Year analysis ===")
             for year, count in sorted(year_counts.items()):
                 percentage = (count / len(all_dates)) * 100
@@ -142,7 +154,7 @@ def get_latest_date_from_file(gpx_file, debug_verbose=False):
         latest_date = max(filtered_dates)
         
         # EXTENDED DEBUG
-        if debug_verbose:
+        if DEBUG and debug_verbose:
             print(f"[DEBUG] === First 10 raw timestamps (all years) ===")
             for i, time_str in enumerate(time_tags[:10]):
                 print(f"[DEBUG]   [{i+1}] RAW: {time_str}")
@@ -151,7 +163,7 @@ def get_latest_date_from_file(gpx_file, debug_verbose=False):
             print(f"[DEBUG]   Earliest: {min(filtered_dates).strftime('%d/%m/%Y %H:%M:%S')}")
             print(f"[DEBUG]   Latest: {max(filtered_dates).strftime('%d/%m/%Y %H:%M:%S')}")
     
-    if latest_date:
+    if DEBUG and debug_verbose:
         print(f"[DEBUG] Latest date in {os.path.basename(gpx_file)}: {latest_date.strftime('%d/%m/%Y %H:%M:%S')} (from {len(filtered_dates)} valid timestamps)")
     
     return latest_date
@@ -186,16 +198,40 @@ def get_earliest_date_from_file(gpx_file):
     return earliest_date
 
 
+def check_if_fix_needed(output_folder):
+    """Prüft ob Timestamps älter als 1 Jahr sind und ob Fix nötig ist"""
+    gpx_files = glob.glob(os.path.join(output_folder, '*.gpx'))
+    
+    if not gpx_files:
+        return False
+    
+    current_date = datetime.now()
+    one_year_ago = current_date - timedelta(days=365)
+    
+    # Prüfe alle Dateien
+    for gpx_file in gpx_files:
+        latest_date = get_latest_date_from_file(gpx_file, debug_verbose=False)
+        if latest_date and latest_date < one_year_ago:
+            if DEBUG:
+                print(f"[DEBUG] Found old timestamp: {latest_date.strftime('%d/%m/%Y')} (older than 1 year)")
+            return True
+    
+    return False
+
+
 def find_newest_file(output_folder):
     """Findet die Datei mit dem spätesten Datum"""
-    print("\n[DEBUG] === Starting search for newest file ===")
+    if DEBUG:
+        print("\n[DEBUG] === Starting search for newest file ===")
+    
     gpx_files = glob.glob(os.path.join(output_folder, '*.gpx'))
     
     if not gpx_files:
         print("[ERROR] No GPX files found in output folder!")
         return None, None
     
-    print(f"[DEBUG] Found {len(gpx_files)} GPX files to scan")
+    if DEBUG:
+        print(f"[DEBUG] Found {len(gpx_files)} GPX files to scan")
     
     newest_file = None
     newest_date = None
@@ -208,7 +244,7 @@ def find_newest_file(output_folder):
             newest_date = latest_date
             newest_file = gpx_file
     
-    if newest_file:
+    if newest_file and DEBUG:
         print(f"\n[DEBUG] === Newest file found: {os.path.basename(newest_file)} ===")
         print(f"[DEBUG] === Date: {newest_date.strftime('%d/%m/%Y %H:%M:%S')} ===")
         
@@ -222,7 +258,8 @@ def find_newest_file(output_folder):
 
 def fix_timestamps_in_file(input_file, output_file, date_offset_days):
     """Korrigiert alle Timestamps in einer Datei"""
-    print(f"[DEBUG] Processing file: {os.path.basename(input_file)}")
+    if DEBUG:
+        print(f"[DEBUG] Processing file: {os.path.basename(input_file)}")
     
     with open(input_file, 'r', encoding='utf-8') as f:
         content = f.read()
@@ -241,17 +278,19 @@ def fix_timestamps_in_file(input_file, output_file, date_offset_days):
             content = content.replace(f'<time>{old_time_str}</time>', f'<time>{new_time_str}</time>', 1)
             timestamps_fixed += 1
             
-            if timestamps_fixed == 1:  # Nur den ersten Timestamp loggen
+            if DEBUG and timestamps_fixed == 1:  # Nur den ersten Timestamp loggen
                 print(f"[DEBUG]   First timestamp: {old_timestamp.strftime('%d/%m/%Y %H:%M:%S')} -> {new_timestamp.strftime('%d/%m/%Y %H:%M:%S')}")
         
         except ValueError:
-            print(f"[WARNING] Could not parse timestamp: {old_time_str}")
+            if DEBUG:
+                print(f"[WARNING] Could not parse timestamp: {old_time_str}")
     
     # Schreibe die korrigierte Datei
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(content)
     
-    print(f"[DEBUG]   Fixed {timestamps_fixed} timestamps")
+    if DEBUG:
+        print(f"[DEBUG]   Fixed {timestamps_fixed} timestamps")
     return timestamps_fixed
 
 
@@ -261,7 +300,8 @@ def rename_fixed_file(fixed_file, fixed_folder):
     earliest_date = get_earliest_date_from_file(fixed_file)
     
     if not earliest_date:
-        print(f"[WARNING] Could not extract date from {os.path.basename(fixed_file)}, keeping original name")
+        if DEBUG:
+            print(f"[WARNING] Could not extract date from {os.path.basename(fixed_file)}, keeping original name")
         return fixed_file
     
     # Extrahiere das Suffix (-complete oder -single)
@@ -280,7 +320,8 @@ def rename_fixed_file(fixed_file, fixed_folder):
     # Benenne um, falls der Name anders ist
     if fixed_file != new_filepath:
         os.rename(fixed_file, new_filepath)
-        print(f"[DEBUG] Renamed: {old_filename} -> {new_filename}")
+        if DEBUG:
+            print(f"[DEBUG] Renamed: {old_filename} -> {new_filename}")
         return new_filepath
     
     return fixed_file
@@ -317,23 +358,28 @@ def apply_2006_fix(output_folder):
     
     # Berechne die Differenz in Tagen
     date_offset = (correct_datetime.date() - newest_date.date()).days
-    print(f"\n[DEBUG] Calculated date offset: {date_offset} days")
-    print(f"[DEBUG] Old date: {newest_date.strftime('%d/%m/%Y')}")
-    print(f"[DEBUG] New date: {correct_datetime.strftime('%d/%m/%Y')}")
+    
+    if DEBUG:
+        print(f"\n[DEBUG] Calculated date offset: {date_offset} days")
+        print(f"[DEBUG] Old date: {newest_date.strftime('%d/%m/%Y')}")
+        print(f"[DEBUG] New date: {correct_datetime.strftime('%d/%m/%Y')}")
     
     # Erstelle output_fixed Ordner
     fixed_folder = "./output_fixed/"
     if not os.path.exists(fixed_folder):
         os.makedirs(fixed_folder)
-        print(f"\n[DEBUG] Created folder: {fixed_folder}")
+        if DEBUG:
+            print(f"\n[DEBUG] Created folder: {fixed_folder}")
     
     # Verarbeite alle GPX-Dateien
     gpx_files = glob.glob(os.path.join(output_folder, '*.gpx'))
-    print(f"\n[DEBUG] Processing {len(gpx_files)} files...")
-    print("\n" + "-"*60)
+    
+    print(f"\nProcessing {len(gpx_files)} files...")
     
     total_timestamps = 0
-    for gpx_file in gpx_files:
+    
+    # Progress bar für Dateiverarbeitung
+    for gpx_file in tqdm(gpx_files, desc="Fixing timestamps", unit="file"):
         filename = os.path.basename(gpx_file)
         temp_output_file = os.path.join(fixed_folder, filename)
         
@@ -349,12 +395,12 @@ def apply_2006_fix(output_folder):
         
         if old_date:
             new_date = old_date + timedelta(days=date_offset)
-            print(f"✓ {filename}: {old_date.strftime('%d/%m/%Y')} -> {new_date.strftime('%d/%m/%Y')}")
+            tqdm.write(f"✓ {filename}: {old_date.strftime('%d/%m/%Y')} -> {new_date.strftime('%d/%m/%Y')}")
         else:
-            print(f"✓ {filename}: processed")
+            tqdm.write(f"✓ {filename}: processed")
     
-    print("-"*60)
-    print(f"\n[SUCCESS] 2006-Fix complete!")
+    print("\n" + "="*60)
+    print(f"[SUCCESS] 2006-Fix complete!")
     print(f"[SUCCESS] Processed {len(gpx_files)} files")
     print(f"[SUCCESS] Fixed {total_timestamps} total timestamps")
     print(f"[SUCCESS] Fixed files saved to: {fixed_folder}")
@@ -363,27 +409,54 @@ def apply_2006_fix(output_folder):
 
 # ==================== MAIN SCRIPT ====================
 
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='FIT to GPX Converter and Merger')
+parser.add_argument('--debug', '--d', action='store_true', help='Enable debug output')
+args = parser.parse_args()
+
+DEBUG = args.debug
+
+if DEBUG:
+    print("[DEBUG MODE ENABLED]\n")
+
 conv = Converter()
 fit_folder = "./input/"
 gpx_folder = "./tmp/"
 merged_folder = "./output/"
 
 create_folders(fit_folder, gpx_folder, merged_folder)
-gpx = conv.fit_to_gpx_bulk(dir_in=fit_folder, dir_out=gpx_folder)
-print(".fit to .gpx DONE")
+
+# FIT zu GPX Konvertierung mit Progress Bar
+fit_files = glob.glob(os.path.join(fit_folder, '*.fit'))
+print(f"Converting {len(fit_files)} FIT files to GPX...")
+
+for fit_file in tqdm(fit_files, desc="Converting", unit="file"):
+    try:
+        conv.fit_to_gpx(f_in=fit_file, f_out=gpx_folder)
+    except Exception as e:
+        if DEBUG:
+            print(f"\n[ERROR] Failed to convert {os.path.basename(fit_file)}: {e}")
+
+print("✓ FIT to GPX conversion DONE\n")
 
 rename_gpx_files(gpx_folder, merged_folder)
-print("Naming DONE")
+print("✓ File naming DONE")
 
 merge_gpx_files(gpx_folder, merged_folder)
-print("Combining DONE")
+print("✓ File combining DONE")
 
-# Frage ob 2006-Fix angewendet werden soll
-print("\n" + "="*60)
-apply_fix = input("Möchtest du den 2006-Fix anwenden? (j/n): ").strip().lower()
-
-if apply_fix in ['j', 'ja', 'y', 'yes']:
-    apply_2006_fix(merged_folder)
+# Prüfe ob 2006-Fix nötig ist
+if check_if_fix_needed(merged_folder):
+    print("\n" + "="*60)
+    print("⚠️  Old timestamps detected (older than 1 year)")
+    apply_fix = input("Möchtest du den 2006-Fix anwenden? (j/n): ").strip().lower()
+    
+    if apply_fix in ['j', 'ja', 'y', 'yes']:
+        apply_2006_fix(merged_folder)
+    else:
+        print("2006-Fix übersprungen.")
+        print("="*60 + "\n")
 else:
-    print("2006-Fix übersprungen.")
-    print("="*60 + "\n")
+    if DEBUG:
+        print("\n[DEBUG] No old timestamps detected. 2006-Fix not needed.")
+    print("\n✓ All done! No date fixes needed.\n")
