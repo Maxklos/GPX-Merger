@@ -101,10 +101,11 @@ def merge_files_in_folder(folder_path, merged_folder):
 
 # ==================== 2006-FIX FUNCTIONS ====================
 
-def get_latest_date_from_file(gpx_file):
+def get_latest_date_from_file(gpx_file, debug_verbose=False):
     """Findet das späteste Datum in einer GPX-Datei"""
     print(f"[DEBUG] Scanning file: {gpx_file}")
     latest_date = None
+    all_dates = []
     
     with open(gpx_file, 'r', encoding='utf-8') as f:
         content = f.read()
@@ -113,13 +114,27 @@ def get_latest_date_from_file(gpx_file):
         
         print(f"[DEBUG] Found {len(time_tags)} timestamps in {os.path.basename(gpx_file)}")
         
+        # EXTENDED DEBUG: Zeige die ersten 10 Timestamps
+        if debug_verbose and len(time_tags) > 0:
+            print(f"[DEBUG] === First 10 raw timestamps found in file ===")
+            for i, time_str in enumerate(time_tags[:10]):
+                print(f"[DEBUG]   [{i+1}] RAW: {time_str}")
+        
         for time_str in time_tags:
             try:
                 timestamp = datetime.strptime(time_str, '%Y-%m-%dT%H:%M:%SZ')
+                all_dates.append(timestamp)
                 if latest_date is None or timestamp > latest_date:
                     latest_date = timestamp
             except ValueError:
                 print(f"[WARNING] Could not parse timestamp: {time_str}")
+        
+        # EXTENDED DEBUG: Zeige alle gefundenen Jahre
+        if debug_verbose and all_dates:
+            years = set(d.year for d in all_dates)
+            print(f"[DEBUG] === Years found in file: {sorted(years)} ===")
+            print(f"[DEBUG] === Earliest timestamp: {min(all_dates).strftime('%d/%m/%Y %H:%M:%S')} ===")
+            print(f"[DEBUG] === Latest timestamp: {max(all_dates).strftime('%d/%m/%Y %H:%M:%S')} ===")
     
     if latest_date:
         print(f"[DEBUG] Latest date in {os.path.basename(gpx_file)}: {latest_date.strftime('%d/%m/%Y %H:%M:%S')}")
@@ -142,14 +157,21 @@ def find_newest_file(output_folder):
     newest_date = None
     
     for gpx_file in gpx_files:
-        latest_date = get_latest_date_from_file(gpx_file)
+        # Aktiviere verbose debugging nur für die erste Datei
+        is_first = (newest_file is None)
+        latest_date = get_latest_date_from_file(gpx_file, debug_verbose=is_first)
         if latest_date and (newest_date is None or latest_date > newest_date):
             newest_date = latest_date
             newest_file = gpx_file
     
     if newest_file:
         print(f"\n[DEBUG] === Newest file found: {os.path.basename(newest_file)} ===")
-        print(f"[DEBUG] === Date: {newest_date.strftime('%d/%m/%Y %H:%M:%S')} ===\n")
+        print(f"[DEBUG] === Date: {newest_date.strftime('%d/%m/%Y %H:%M:%S')} ===")
+        
+        # SUPER DETAILED DEBUG für die neueste Datei
+        print(f"\n[DEBUG] === DETAILED ANALYSIS of newest file ===")
+        get_latest_date_from_file(newest_file, debug_verbose=True)
+        print()
     
     return newest_file, newest_date
 
