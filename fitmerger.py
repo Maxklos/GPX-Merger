@@ -1,9 +1,10 @@
 from fit2gpx import Converter
 import os
 import glob
-from datetime import datetime
+from datetime import datetime, timedelta
 import shutil
 import subprocess
+import re
 
 
 def create_folders(fit_folder, gpx_folder, merged_folder):
@@ -97,6 +98,171 @@ def merge_files_in_folder(folder_path, merged_folder):
     shutil.move(output_file, merged_filepath)
     print("Moved merged file to:", merged_filepath)
 
+
+# ==================== 2006-FIX FUNCTIONS ====================
+
+def get_latest_date_from_file(gpx_file):
+    """Findet das späteste Datum in einer GPX-Datei"""
+    print(f"[DEBUG] Scanning file: {gpx_file}")
+    latest_date = None
+    
+    with open(gpx_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+        # Finde alle <time> Tags
+        time_tags = re.findall(r'<time>(.*?)</time>', content)
+        
+        print(f"[DEBUG] Found {len(time_tags)} timestamps in {os.path.basename(gpx_file)}")
+        
+        for time_str in time_tags:
+            try:
+                timestamp = datetime.strptime(time_str, '%Y-%m-%dT%H:%M:%SZ')
+                if latest_date is None or timestamp > latest_date:
+                    latest_date = timestamp
+            except ValueError:
+                print(f"[WARNING] Could not parse timestamp: {time_str}")
+    
+    if latest_date:
+        print(f"[DEBUG] Latest date in {os.path.basename(gpx_file)}: {latest_date.strftime('%d/%m/%Y %H:%M:%S')}")
+    
+    return latest_date
+
+
+def find_newest_file(output_folder):
+    """Findet die Datei mit dem spätesten Datum"""
+    print("\n[DEBUG] === Starting search for newest file ===")
+    gpx_files = glob.glob(os.path.join(output_folder, '*.gpx'))
+    
+    if not gpx_files:
+        print("[ERROR] No GPX files found in output folder!")
+        return None, None
+    
+    print(f"[DEBUG] Found {len(gpx_files)} GPX files to scan")
+    
+    newest_file = None
+    newest_date = None
+    
+    for gpx_file in gpx_files:
+        latest_date = get_latest_date_from_file(gpx_file)
+        if latest_date and (newest_date is None or latest_date > newest_date):
+            newest_date = latest_date
+            newest_file = gpx_file
+    
+    if newest_file:
+        print(f"\n[DEBUG] === Newest file found: {os.path.basename(newest_file)} ===")
+        print(f"[DEBUG] === Date: {newest_date.strftime('%d/%m/%Y %H:%M:%S')} ===\n")
+    
+    return newest_file, newest_date
+
+
+def fix_timestamps_in_file(input_file, output_file, date_offset_days):
+    """Korrigiert alle Timestamps in einer Datei"""
+    print(f"[DEBUG] Processing file: {os.path.basename(input_file)}")
+    
+    with open(input_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # Finde alle <time> Tags und ersetze sie
+    time_tags = re.findall(r'<time>(.*?)</time>', content)
+    timestamps_fixed = 0
+    
+    for old_time_str in time_tags:
+        try:
+            old_timestamp = datetime.strptime(old_time_str, '%Y-%m-%dT%H:%M:%SZ')
+            # Nur Datum ändern, Uhrzeit bleibt gleich
+            new_timestamp = old_timestamp + timedelta(days=date_offset_days)
+            new_time_str = new_timestamp.strftime('%Y-%m-%dT%H:%M:%SZ')
+            
+            content = content.replace(f'<time>{old_time_str}</time>', f'<time>{new_time_str}</time>', 1)
+            timestamps_fixed += 1
+            
+            if timestamps_fixed == 1:  # Nur den ersten Timestamp loggen
+                print(f"[DEBUG]   First timestamp: {old_timestamp.strftime('%d/%m/%Y %H:%M:%S')} -> {new_timestamp.strftime('%d/%m/%Y %H:%M:%S')}")
+        
+        except ValueError:
+            print(f"[WARNING] Could not parse timestamp: {old_time_str}")
+    
+    # Schreibe die korrigierte Datei
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(content)
+    
+    print(f"[DEBUG]   Fixed {timestamps_fixed} timestamps")
+    return timestamps_fixed
+
+
+def apply_2006_fix(output_folder):
+    """Hauptfunktion für den 2006-Fix"""
+    print("\n" + "="*60)
+    print("=== 2006-FIX MODE ===")
+    print("="*60)
+    
+    # Finde die neueste Datei
+    newest_file, newest_date = find_newest_file(output_folder)
+    
+    if not newest_file or not newest_date:
+        print("[ERROR] Could not find any valid GPX files with timestamps!")
+        return
+    
+    # Zeige dem User das neueste Datum
+    print(f"\nNeuste Datei: {os.path.basename(newest_file)}")
+    print(f"Datum in Datei: {newest_date.strftime('%d/%m/%Y')}")
+    print(f"Uhrzeit in Datei: {newest_date.strftime('%H:%M:%S')}")
+    
+    # Frage nach dem korrekten Datum
+    while True:
+        correct_date_str = input("\nAn welchem Tag wurde diese Datei aufgezeichnet? (Format: DD/MM/YYYY): ").strip()
+        try:
+            correct_date = datetime.strptime(correct_date_str, '%d/%m/%Y')
+            # Behalte die Uhrzeit vom Original
+            correct_datetime = correct_date.replace(hour=newest_date.hour, minute=newest_date.minute, second=newest_date.second)
+            break
+        except ValueError:
+            print("[ERROR] Ungültiges Datumsformat! Bitte verwende DD/MM/YYYY (z.B. 13/11/2025)")
+    
+    # Berechne die Differenz in Tagen
+    date_offset = (correct_datetime.date() - newest_date.date()).days
+    print(f"\n[DEBUG] Calculated date offset: {date_offset} days")
+    print(f"[DEBUG] Old date: {newest_date.strftime('%d/%m/%Y')}")
+    print(f"[DEBUG] New date: {correct_datetime.strftime('%d/%m/%Y')}")
+    
+    # Erstelle output_fixed Ordner
+    fixed_folder = "./output_fixed/"
+    if not os.path.exists(fixed_folder):
+        os.makedirs(fixed_folder)
+        print(f"\n[DEBUG] Created folder: {fixed_folder}")
+    
+    # Verarbeite alle GPX-Dateien
+    gpx_files = glob.glob(os.path.join(output_folder, '*.gpx'))
+    print(f"\n[DEBUG] Processing {len(gpx_files)} files...")
+    print("\n" + "-"*60)
+    
+    total_timestamps = 0
+    for gpx_file in gpx_files:
+        filename = os.path.basename(gpx_file)
+        output_file = os.path.join(fixed_folder, filename)
+        
+        # Hole das alte Datum für den Log
+        old_date = get_latest_date_from_file(gpx_file)
+        
+        # Fixe die Timestamps
+        fixed_count = fix_timestamps_in_file(gpx_file, output_file, date_offset)
+        total_timestamps += fixed_count
+        
+        if old_date:
+            new_date = old_date + timedelta(days=date_offset)
+            print(f"✓ {filename}: {old_date.strftime('%d/%m/%Y')} -> {new_date.strftime('%d/%m/%Y')}")
+        else:
+            print(f"✓ {filename}: processed")
+    
+    print("-"*60)
+    print(f"\n[SUCCESS] 2006-Fix complete!")
+    print(f"[SUCCESS] Processed {len(gpx_files)} files")
+    print(f"[SUCCESS] Fixed {total_timestamps} total timestamps")
+    print(f"[SUCCESS] Fixed files saved to: {fixed_folder}")
+    print("="*60 + "\n")
+
+
+# ==================== MAIN SCRIPT ====================
+
 conv = Converter()
 fit_folder = "./input/"
 gpx_folder = "./tmp/"
@@ -111,3 +277,13 @@ print("Naming DONE")
 
 merge_gpx_files(gpx_folder, merged_folder)
 print("Combining DONE")
+
+# Frage ob 2006-Fix angewendet werden soll
+print("\n" + "="*60)
+apply_fix = input("Möchtest du den 2006-Fix anwenden? (j/n): ").strip().lower()
+
+if apply_fix in ['j', 'ja', 'y', 'yes']:
+    apply_2006_fix(merged_folder)
+else:
+    print("2006-Fix übersprungen.")
+    print("="*60 + "\n")
